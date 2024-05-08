@@ -1,18 +1,33 @@
 import pandas as pd
 import numpy as np
 from sklearn import preprocessing
-import functools
-from sklearn.metrics.cluster import adjusted_rand_score
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import BaggingClassifier
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 from sklearn.mixture import GaussianMixture
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.ensemble import VotingClassifier
+from sklearn.pipeline import Pipeline
+import functools
+import matplotlib.pyplot as plt
+from sklearn.metrics.cluster import adjusted_rand_score
+
+seed = 0
+show_elbow = False
 
 def hh_mm_ss2seconds(hh_mm_ss):
     return functools.reduce(lambda acc, x: acc*60 + x, map(int, hh_mm_ss.split(':')))
+
+
+def find_elbow_point(distortions):
+    # list of numbers from this distortion to next distortion
+    jumps = [(distortions[i] - distortions[i+1]) for i in range(len(distortions)-1)]
+
+    max_jump = max(jumps)
+    for i in range(2, len(jumps) - 2):
+        ret_from_prev = jumps[i] < (1 / 100) * jumps[i - 1]
+        ret_from_max = jumps[i] < (1 / 100) * max_jump
+        if  ret_from_prev or ret_from_max:
+            return i - 1
+
+    return len(jumps) - 1
 
 
 def predictor_baseline(csv_path):
@@ -49,37 +64,57 @@ def evaluate():
     print(f'Adjusted Rand Index Score of set3.csv: {rand_index_score:.4f}')
 
 
+def scaler_preprocessor():
+    scaler = StandardScaler()
+    return Pipeline([
+        ('scaler', scaler),
+        ])
+
+
+def graph(distortions, max_clusters):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(2, max_clusters + 1), distortions, marker='o', linestyle='-')
+    plt.xlabel('Number of clusters (k)')
+    plt.ylabel('Distortion')
+    plt.title('Distortion vs Number of Clusters')
+    plt.xticks(range(2, max_clusters + 1))
+    plt.grid(True)
+    plt.show()
+
+
 def predictor(csv_path):
     df = pd.read_csv(csv_path, converters={'SEQUENCE_DTTM': hh_mm_ss2seconds})
-
     selected_features = ['SEQUENCE_DTTM', 'LAT', 'LON', 'SPEED_OVER_GROUND', 'COURSE_OVER_GROUND']
     X = df[selected_features].to_numpy()
 
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    distortions = []
+    min_clusters = 2
+    max_clusters = 30
+    preprocessor = scaler_preprocessor()
+    x_pre = preprocessor.fit_transform(X)
+    for k in range(min_clusters, max_clusters + 1):
+        clusterer = KMeans(n_clusters=k, random_state=seed)
+        clusterer.fit(x_pre)
+        distortions.append(clusterer.inertia_)
 
-    kmeans = KMeans(n_clusters=3)
-    gmm = GaussianMixture(n_components=3)
-    hierarchical = AgglomerativeClustering(n_clusters=3)
+    if show_elbow:
+        graph(distortions, max_clusters)
 
-    kmeans_labels = kmeans.fit_predict(X_scaled)
-    gmm_labels = gmm.fit_predict(X_scaled)
-    hierarchical_labels = hierarchical.fit_predict(X_scaled)
+    k = find_elbow_point(distortions)
+    print(f"n_clusters found: {k}")
+    preprocessor = scaler_preprocessor()
+    model = Pipeline([
+        ('preprocessor', preprocessor),
+        ('model', GaussianMixture(n_components=k))
+    ])
 
-    ensemble_labels = (kmeans_labels + gmm_labels + hierarchical_labels) // 3
+    labels_pred = model.fit_predict(X)
 
-    return ensemble_labels
-
-
-def evaluate_path(csv_path):
-    labels_true = pd.read_csv(csv_path)['VID'].to_numpy()
-    labels_pred = predictor(csv_path)
-    rand_index_score = adjusted_rand_score(labels_true, labels_pred)
-    print(f'Adjusted Rand Index Score of {csv_path}: {rand_index_score:.4f}')
+    return labels_pred
 
 
 if __name__=="__main__":
     get_baseline_score()
-    for f in ['set1.csv', 'set2.csv']:
-        evaluate_path('./Data/' + f)
-    # evaluate()
+    evaluate()
+
+
