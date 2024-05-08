@@ -1,5 +1,5 @@
+# TODO add the printing here for actual num clusters and predicted num clusters
 import pandas as pd
-import numpy as np
 from sklearn import preprocessing
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -21,7 +21,7 @@ def find_elbow_point(distortions):
     jumps = [(distortions[i] - distortions[i+1]) for i in range(len(distortions)-1)]
 
     max_jump = max(jumps)
-    for i in range(2, len(jumps) - 2):
+    for i in range(1, len(jumps) - 2):
         ret_from_prev = jumps[i] < (1 / 100) * jumps[i - 1]
         ret_from_max = jumps[i] < (1 / 100) * max_jump
         if  ret_from_prev or ret_from_max:
@@ -105,7 +105,7 @@ def predictor(csv_path):
     preprocessor = scaler_preprocessor()
     model = Pipeline([
         ('preprocessor', preprocessor),
-        ('model', GaussianMixture(n_components=k))
+        ('model', GaussianMixture(n_components=k, random_state=seed))
     ])
 
     labels_pred = model.fit_predict(X)
